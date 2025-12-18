@@ -1,71 +1,70 @@
-Rapport correctifs VulnBlog (avant / après)
-=========================================
+# Rapport correctifs VulnBlog (avant / après)
 
-1) Injection SQL - Authentification (login)
+## Injection SQL - Authentification (login)
 - Avant : UserRepository::getUserLogin() construisait "SELECT * FROM user WHERE email = '$email' AND password = '$hashedPassword'".
 - Après : suppression de la méthode et recherche par email via Doctrine, vérification du mot de passe avec le PasswordHasher et rehash automatique des anciens MD5. Fichiers : src/Repository/UserRepository.php, src/Controller/LoginController.php.
 
-2) Injection SQL - Recherche
+## Injection SQL - Recherche
 - Avant : PostRepository::search() concaténait le terme de recherche dans la requête SQL.
 - Après : utilisation du QueryBuilder avec paramètre LIKE. Fichier : src/Repository/PostRepository.php.
 
-3) XSS stockée (commentaires / bio)
+## XSS stockée (commentaires / bio)
 - Avant : templates/blog/post.html.twig rendait comment.content avec |raw et template_from_string pour aboutMe.
 - Après : échappement par défaut, aboutMe affiché avec |e, commentaires rendus via nl2br sans raw. Fichier : templates/blog/post.html.twig.
 
-4) XSS reflétée (recherche)
+## XSS reflétée (recherche)
 - Avant : {{ search | raw }} dans templates/blog/index.html.twig.
 - Après : sortie échappée ({{ search }}). Fichier : templates/blog/index.html.twig.
 
-5) LFI (legal/content)
+## LFI (legal/content)
 - Avant : chemin construit directement avec ?p= sans contrôle.
 - Après : liste blanche (legal.html) + realpath pour rester dans le dossier. Fichier : src/Controller/BlogController.php.
 
-6) Injection de commandes (Referer)
+## Injection de commandes (Referer)
 - Avant : shell_exec('curl ... '.$referer) dans Analytics::track().
 - Après : suppression de shell_exec, simple journalisation après validation stricte du referer. Fichier : src/Services/Analytics.php.
 
-7) SSRF / Upload avatar
+## SSRF / Upload avatar
 - Avant : file_get_contents($url) sans filtrage, upload acceptait toute extension.
 - Après : validation d’URL (schéma http/https, pas d’IP privée), contrôle image (getimagesizefromstring), timeout, extensions autorisées (png/jpg/jpeg/gif). Fichiers : src/Controller/UserController.php, src/Services/Avatar.php.
 
-8) RCE via resize avatar
+## RCE via resize avatar
 - Avant : shell_exec('convert ...').
 - Après : redimensionnement avec GD (imagecreatefrom* + imagecopyresampled). Fichier : src/Controller/UserController.php.
 
-9) IDOR (changements profil / avatar)
+## IDOR (changements profil / avatar)
 - Avant : pas de vérification d’identité sur /user/password/{user}, /user/email/{user}, delete/resize avatar.
 - Après : vérification stricte ($user === app.user) et CSRF sur toutes ces routes. Fichier : src/Controller/UserController.php.
 
-10) CSRF manquant
+## CSRF manquant
 - Avant : csrf_protection désactivé, formulaires sans jeton.
 - Après : activation dans config, jetons ajoutés et vérifiés dans contrôleurs pour login, register, commentaires, profil (email, mot de passe, avatar, bio, edit). Fichiers : config/packages/framework.yaml, templates/*.twig, src/Controller/*.
 
-11) Mass assignment / élévation de privilèges
+## Mass assignment / élévation de privilèges
 - Avant : User::fromArray() appliquait toutes les clés (isAdmin, roles, etc.).
 - Après : suppression de fromArray, mise à jour ciblée des champs autorisés. Fichiers : src/Entity/User.php, src/Controller/UserController.php.
 
-12) Hashing faible (MD5) / gestion des sessions
+## Hashing faible (MD5) / gestion des sessions
 - Avant : mots de passe stockés en MD5, logout sans invalidation explicite.
 - Après : PasswordHasher native (algorithm auto), rehash des MD5 à la connexion, logout invalide la session et supprime le cookie. Fichiers : config/packages/security.yaml, src/Controller/LoginController.php.
 
-13) phpinfo exposé
+## phpinfo exposé
 - Avant : public/info.php affichait phpinfo().
 - Après : endpoint renvoie 404 (désactivé). Fichier : public/info.php.
 
-14) Désérialisation non sécurisée (cookie USER_PREF)
+## Désérialisation non sécurisée (cookie USER_PREF)
 - Avant : unserialize(base64_decode(cookie)).
 - Après : JSON signé (HMAC avec APP_SECRET) + HttpOnly sur le cookie. Fichier : src/Services/UserPref.php.
 
-15) Validation des entrées
+## Validation des entrées
 - Avant : peu ou pas de validation sur commentaires, bio, email, fichiers.
 - Après : trims, validations de longueur/email, blocage des contenus vides et formats interdits. Fichiers : src/Controller/BlogController.php, src/Controller/UserController.php.
 
-16) CSRF sur commentaires
+## CSRF sur commentaires
 - Avant : formulaire de commentaire sans jeton.
 - Après : jeton csrf_token('comment_<postId>') vérifié côté serveur. Fichiers : templates/blog/post.html.twig, src/Controller/BlogController.php.
 
-Résumé des points clés corrigés
+## Résumé des points clés corrigés
 - SQLi : login + recherche -> requêtes paramétrées.
 - XSS/SSTI : suppression des sorties raw et du rendu de templates depuis les données utilisateur.
 - LFI/SSRF/RCE : whitelists + interdiction des appels shell et des chemins arbitraires.
